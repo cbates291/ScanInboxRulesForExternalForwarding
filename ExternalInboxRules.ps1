@@ -1,5 +1,5 @@
 #Script Created by: Chris Bates
-#Version 1.0
+#Version 1.2
 #Date Last Updated: 1-11-18
 
 #Setup O365 Connection
@@ -30,13 +30,36 @@ $logfilename = "$SetPath\MailboxRuleForward.txt"
 #Gather all Mailboxes
 $AllMailboxes = Get-Mailbox -ResultSize Unlimited
 
+#Sets Threshold for O365 Reconnect
+$reconnectThreshold = 1000
+
+#Sets Initial Count
+$processedCount = 0
+
 <#Parse the mailboxes and search their inbox rules for ForwardTo, ForwardAsAttachmentTo, and RedirectTo.
 We are ensuring that each option is not NULL and does not include "cn=Recipients"(this is so that we don't
 pull rules that include users in our organization)#>
 foreach ($mailbox in $AllMailboxes) {
 
-    Get-InboxRule -Mailbox $mailbox.DistinguishedName | where {$_.ForwardTo -ne $null -and $_.ForwardTo -inotlike "*cn=Recipients*" -or $_.ForwardAsAttachmentTo -ne $null -and $_.ForwardAsAttachmentTo -inotlike "*Recipients*" -or $_.RedirectTo -ne $null -and $_.RedirectTo -inotlike "*Recipients*" } | Select-Object Identity,Description,ForwardTo,ForwardAsAttachmentTo,RedirectTo | Export-Csv $attachment -append
+    # Reconnect if threshold is reached
+    if($processedCount -ge $reconnectThreshold)
+    {
 
+        # Creates New Session
+        $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri "https://outlook.office365.com/powershell-liveid/" -Credential $MSOLCred -Authentication Basic -AllowRedirection
+
+        # Start a new session
+        Import-PSSession $Session -AllowClobber
+
+        # Reset processed counter
+        $processedCount = 0
+    }
+	<#Parse the mailboxes and search their inbox rules for ForwardTo, ForwardAsAttachmentTo, and RedirectTo.
+    We are ensuring that each option is not NULL and does not include "cn=Recipients"(this is so that we don't
+    pull rules that include users in our organization)#>
+    Get-InboxRule -Mailbox $mailbox.DistinguishedName | where {$_.ForwardTo -ne $null -and $_.ForwardTo -inotlike "*cn=Recipients*" -or $_.ForwardAsAttachmentTo -ne $null -and $_.ForwardAsAttachmentTo -inotlike "*Recipients*" -or $_.RedirectTo -ne $null -and $_.RedirectTo -inotlike "*Recipients*" } | Select-Object Identity,Description,ForwardTo,ForwardAsAttachmentTo,RedirectTo | Export-Csv $attachment -append
+    $processedCount++
+	
 }
 
 #Set the WarningPreference Back to what it was before the script
